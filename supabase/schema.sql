@@ -2,10 +2,8 @@
 create table if not exists public.influence_waitlist (
   email          text primary key,
   plan           text,                -- 'free' or 'pro': which tier they said they want
-  role           text,                -- student, early_career, manager_founder, other
   conversation   text,                -- raise, offer, boss, deal, repair, debate, other
   spar_format    text,                -- camera, voice, masked, friend
-  detail         text,                -- free text: the conversation they keep putting off
   source         text,                -- utm_source or ref from the link they arrived on
   referrer       text,
   demo_completed boolean not null default false,

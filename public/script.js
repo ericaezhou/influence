@@ -55,7 +55,7 @@
     try {
       await submit({ email, company_website: form.company_website.value, step: "hero" });
       mainForm.email.value = email;
-      toast("You're on the list. Add a few details below so we can match you well.");
+      toast("You're on the list. Tell us what you want to practice below.");
       joinSection.scrollIntoView({ behavior: "smooth" });
     } catch (err) {
       toast(err.message);
@@ -70,37 +70,37 @@
       you: "I've been here two years and I think I deserve a raise.",
       them: "Everyone thinks that. What's changed since your last review?",
       move: "Bargain with intent",
-      why: "Open with what you've done and a specific number, not how you feel. It gives them something they can take to finance.",
+      why: "Lead with what you've done and a specific number.",
     },
     offer: {
       you: "Is there any flexibility on the salary?",
       them: "This is the standard band for the level. Do you have another offer?",
       move: "Know your alternatives",
-      why: "Your leverage comes from what you'd do if this falls through. Work that out before you ask, so the question doesn't rattle you.",
+      why: "Know what you'd do if this falls through, before you ask.",
     },
     boss: {
       you: "I don't think this deadline is realistic.",
       them: "The client already has the date. So what are you proposing?",
       move: "Understand the other side",
-      why: "Your boss has a problem too. Find out what they can't move, then bring a plan that works inside it.",
+      why: "Find out what they can't move, then plan around it.",
     },
     deal: {
       you: "We can do 10% off if you sign this week.",
       them: "Your competitor is at 20%. Why would I sign at all?",
       move: "Bargain with intent",
-      why: "Don't drop your price on reflex. Trade each concession for something you want, and make it clear what you're getting in return.",
+      why: "Don't just drop your price. Trade each concession for something you want.",
     },
     repair: {
       you: "Can we talk about what happened?",
       them: "Honestly, I thought you didn't care. You never called.",
       move: "Understand the other side",
-      why: "Your first instinct is to defend yourself. Learn to find out what they actually experienced before you explain your side.",
+      why: "Find out what they experienced before you explain your side.",
     },
     debate: {
       you: "I think we should kill this feature.",
       them: "Two customers asked for it yesterday. Where's your data?",
       move: "Understand the other side",
-      why: "People don't change their minds because you out-argued them. Start from what they care about and build your case from there.",
+      why: "Start from what they care about, then build your case.",
     },
   };
 

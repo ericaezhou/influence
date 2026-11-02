@@ -16,7 +16,7 @@
   } catch {}
 
   // All copy in this file is written here, never from user input, so innerHTML is safe.
-  const state = { video: false, voice: false, picks: [], pulses: [] };
+  const state = { video: false, voice: false, picks: [] };
   // Bumped on every restart, so a pending timer from an old run can't draw into a new one.
   let runId = 0;
 
@@ -186,7 +186,6 @@
   function spar() {
     step(3);
     state.picks = [];
-    state.pulses = [];
     const you = [state.video ? "Avatar" : "Camera on", state.voice ? "voice masked" : "your voice"].join(", ");
     stage.innerHTML = `
       <div class="spar-head demo-spar-head">
@@ -246,7 +245,6 @@
     area.querySelector(".pulse").scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
     area.querySelectorAll(".pulse-btns button").forEach((b) =>
       b.addEventListener("click", () => {
-        state.pulses.push(b.textContent);
         turn(r + 1);
         area.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
       })

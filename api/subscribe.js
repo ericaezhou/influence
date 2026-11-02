@@ -1,7 +1,6 @@
 import { upsert, isConfigured } from "../lib/supabase.js";
 
 const PLANS = new Set(["free", "pro"]);
-const ROLES = new Set(["student", "early_career", "manager_founder", "other"]);
 const CONVERSATIONS = new Set(["raise", "offer", "boss", "deal", "repair", "debate", "other"]);
 const FORMATS = new Set(["camera", "voice", "masked", "friend"]);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -30,10 +29,8 @@ export default async function handler(req, res) {
 
   const fields = {
     plan: oneOf(PLANS, body.plan),
-    role: oneOf(ROLES, body.role),
     conversation: oneOf(CONVERSATIONS, body.conversation),
     spar_format: oneOf(FORMATS, body.sparFormat),
-    detail: clip(body.detail, 1000),
     source: clip(body.source, 100),
     referrer: clip(body.referrer, 300),
     // Only ever upgrade these; the columns default to 'hero' and false on insert.
