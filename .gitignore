@@ -1,0 +1,38 @@
+# Secrets: Supabase URL/keys live in Vercel env vars, never in git.
+# Covers .env, .env.local, .env.production (e.g. from `vercel env pull`) in any folder.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# Vercel CLI link (project/org IDs) and local build output
+.vercel/
+
+# Supabase CLI local state, if anyone runs `supabase link` / `supabase start`
+supabase/.temp/
+supabase/.branches/
+supabase/.env
+supabase/.env.*
+
+# Sign-up exports and DB backups contain people's emails, so keep them off GitHub
+*.csv
+*.xlsx
+*.dump
+*.sql.gz
+*.backup
+
+# Personal editor / assistant settings
+.claude/settings.local.json
+.vscode/
+.idea/
+
+# Dependencies, logs and OS junk
+node_modules/
+npm-debug.log*
+*.log
+.DS_Store
+
+# Private application material, never publish
+doc/
