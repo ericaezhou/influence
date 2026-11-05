@@ -1,10 +1,18 @@
+// Influence prototype walkthrough. Everything is scripted: no mic, no network, no backend.
+// All copy lives in this file and is never built from user input, so innerHTML is safe here.
 (() => {
-  const stage = document.querySelector("[data-stage]");
-  const progress = document.querySelectorAll("[data-progress] li");
+  const screen = document.querySelector("[data-screen]");
+  const phone = document.querySelector(".phone");
+  const toastEl = document.querySelector("[data-toast]");
+  const guideEl = document.querySelector("[data-guide]");
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const wait = (ms) => new Promise((r) => setTimeout(r, reduced ? 0 : ms));
 
-  // Keep where this visit came from, so a link straight to /demo still gets credited at sign-up.
+  // Every navigation bumps the epoch; async work from an old screen checks it and stops.
+  let epoch = 0;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, reduced ? 0 : ms));
+  const alive = (e) => e === epoch;
+
+  // Remember where this visit came from, so a sign-up after the demo is credited correctly.
   try {
     const params = new URLSearchParams(location.search);
     const source = params.get("utm_source") || params.get("ref");
@@ -15,370 +23,883 @@
     }
   } catch {}
 
-  // All copy in this file is written here, never from user input, so innerHTML is safe.
-  const state = { video: false, voice: false, picks: [] };
-  // Bumped on every restart, so a pending timer from an old run can't draw into a new one.
-  let runId = 0;
+  const ICON = {
+    mic: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3" fill="currentColor"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+    person: (skin, shirt, hair) => `<svg viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="46" r="24" fill="${skin}" stroke="#1e2232" stroke-width="3"/><path d="M18 118c3-30 21-42 42-42s39 12 42 42z" fill="${shirt}" stroke="#1e2232" stroke-width="3"/>${hair ? `<path d="M37 42c0-20 14-26 25-25 13 1 22 10 21 25-6-1-14-5-20-12-5 7-15 11-26 12z" fill="${hair}"/>` : ""}</svg>`,
+    masked: '<svg viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="46" r="24" fill="#c8cfe0" stroke="#1e2232" stroke-width="3"/><path d="M18 118c3-30 21-42 42-42s39 12 42 42z" fill="#c8cfe0" stroke="#1e2232" stroke-width="3"/><circle cx="51" cy="44" r="3.5" fill="#1e2232"/><circle cx="69" cy="44" r="3.5" fill="#1e2232"/><path d="M50 56h20" stroke="#1e2232" stroke-width="3" stroke-linecap="round"/></svg>',
+  };
+  const WAVE = `<div class="wave idle" aria-hidden="true">${"<i></i>".repeat(14)}</div>`;
 
-  // o = understood the other side, a = knew their alternatives, i = bargained with intent.
-  // talk = share of airtime this line implies; cut = whether it talks over the partner.
-  const ROUNDS = [
+  // ------------------------------------------------------------------ content
+
+  const CASE = {
+    title: "Ask your manager for a raise",
+    goal: "$110k, up from $95k",
+    walkaway: "Recruiter final rounds at about $105k",
+  };
+
+  const STORY = [
+    "You're a product analyst, two years in, making $95k.",
+    "At your last review you got 3%, and your manager said the budget was tight.",
+    "Since then you've run the Q3 launch. Last week, a recruiter called.",
+    "Tomorrow you meet Dana, your manager. You want $110k.",
+  ];
+
+  // [brackets] mark the key ideas that get highlighted in the transcript.
+  const PROMPTS = [
     {
-      prompt: "Thanks for grabbing time. What's on your mind?",
-      options: [
-        { text: "I feel like I've been underpaid for a while, and it's starting to bother me.",
-          reply: "Okay. Underpaid compared with what? I can't take a feeling to finance.",
-          o: 1, a: 0, i: 0, talk: 42, cut: 0 },
-        { text: "Since my last review I took over the Q3 launch and brought churn reporting in-house. I'd like to talk about moving my pay to $110k.",
-          reply: "That launch went well, I'll give you that. But $110k is a big jump, and budgets are frozen until January.",
-          o: 1, a: 1, i: 3, talk: 55, cut: 0 },
-        { text: "I have another offer, so you'd need to match it or I'm gone.",
-          reply: "Wow. Okay. If that's where you are, maybe you should take it.",
-          o: 0, a: 1, i: 0, talk: 62, cut: 1 },
+      step: "The other side's interests",
+      q: "What does your manager really need from this conversation, besides keeping costs down?",
+      takes: [
+        { text: "Um, I think they need to [stay within budget], and probably not [lose someone] right before planning season.",
+          ideas: ["Budget pressure", "Fear of losing you"],
+          nudge: "You named their fear of losing you. What about how they look to their own boss?", good: false },
+        { text: "They need to [stay within budget], [keep the team stable] before planning, and [look good to their own boss] for keeping strong people.",
+          ideas: ["Budget pressure", "Team stability", "Their boss"],
+          nudge: "Strong. You named three interests, including one they'd never say out loud.", good: true },
       ],
     },
     {
-      options: [
-        { text: "That seems convenient. Is everyone's budget really frozen?",
-          reply: "I don't love that tone. It isn't convenient for me either.",
-          o: 0, a: 0, i: 0, talk: 60, cut: 2 },
-        { text: "Okay, I understand. I'll wait until January then.",
-          reply: "Thanks for understanding. Let's circle back then. Anything else?",
-          o: 1, a: 0, i: 0, talk: 30, cut: 0 },
-        { text: "Help me understand. What would you need to see, or who would need to sign off, to make something happen before January?",
-          reply: "Base is locked until the January cycle. I do have a small retention pool, and I've been meaning to talk about your title.",
-          o: 3, a: 0, i: 1, talk: 45, cut: 0 },
+      step: "Your walkaway (BATNA)",
+      q: "If this talk fails, what's your best option?",
+      takes: [
+        { text: "I guess I'd just [keep looking] for something else.",
+          ideas: ["Other options"],
+          nudge: "Be specific. What's actually on the table, and what would you accept?", good: false },
+        { text: "A recruiter has me in [final rounds at around $105k]. I'd [take it if this goes nowhere], but I'd [rather stay].",
+          ideas: ["Concrete alternative", "Your floor", "Preference to stay"],
+          nudge: "Clear walkaway. Now you know your floor before you walk in.", good: true },
       ],
     },
     {
-      options: [
-        { text: "What about $110k in January, then? Can you promise me that?",
-          reply: "I can't promise a number. I can promise we'll talk.",
-          outcome: { title: "No deal yet", body: "You got a conversation in January and nothing in writing." },
-          o: 0, a: 0, i: 1, talk: 50, cut: 0 },
-        { text: "A recruiter has me in final rounds at around $105k, and I'd rather stay. Could we do the senior title now, a bump from whatever discretionary budget you have, and a written January review for the rest?",
-          reply: "I don't want to lose you. Title and $5k I can do this week, and I'll put January in writing. Let me talk to HR.",
-          outcome: { title: "Deal: senior title, $5k now, January in writing", body: "Most of what you wanted, and a clear path to the rest." },
-          o: 1, a: 3, i: 3, talk: 52, cut: 0 },
-        { text: "A recruiter reached out, and honestly I might just leave if this doesn't work.",
-          reply: "I don't want you to go, but I can't work with an ultimatum. Send me what they offer.",
-          outcome: { title: "Stalemate", body: "You showed your alternative as a threat, so your manager stopped looking for options." },
-          o: 0, a: 1, i: 0, talk: 58, cut: 1 },
+      step: "Your opening move",
+      q: "Say your first line out loud.",
+      takes: [
+        { text: "So, um, I feel like I've been [underpaid] for a while, and it's kind of starting to bother me.",
+          ideas: ["A feeling"],
+          nudge: "This opens with a feeling. Lead with what you've done and a specific number.", good: false },
+        { text: "Since my last review I [ran the Q3 launch] and [brought churn reporting in-house]. I'd like to talk about [moving to $110k].",
+          ideas: ["Your track record", "A specific number"],
+          nudge: "Concrete and specific. That's an opening they can take to finance.", good: true },
       ],
     },
   ];
 
-  const PULSES = [
-    "Did your partner seem to be listening?",
-    "Did that feel like a real limit or a stall?",
+  const PRO = [
+    { h: "The other side's interests", pro: "Find what they can still move, not just what's frozen. Budgets are rarely frozen everywhere." },
+    { h: "Your walkaway", pro: "Know your number before you walk in, and mention your alternative calmly, as context rather than a threat." },
+    { h: "Your opening move", pro: "Open with your record and a specific ask, then ask for a package: title, timing and money." },
   ];
 
-  function step(n) {
-    progress.forEach((li, i) => {
-      li.classList.toggle("done", i < n);
-      li.classList.toggle("cur", i === n);
-      if (i === n) li.setAttribute("aria-current", "step"); else li.removeAttribute("aria-current");
-    });
-    window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" });
-    stage.focus({ preventScroll: true });
-  }
+  const PLAN = "I'll open with the launch and a number, find out what they can still move, and keep the recruiter as my backup.";
+  const CHECKIN = "They're open, but the budget is real. I should ask what they can move.";
+  const DEBRIEF = "I'd bring up the recruiter earlier, and more calmly. And I'd ask about the retention pool myself instead of waiting.";
 
-  // ---- 1. Learn ----
-  function learn() {
-    step(0);
-    stage.innerHTML = `
-      <span class="hand">your first lesson, in 45 seconds</span>
-      <h1>Three moves skilled negotiators make.</h1>
-      <ul class="frameworks">
-        <li><b>Understand the other side</b>Everyone across the table has limits and fears of their own. Ask until you know what they are.</li>
-        <li><b>Know your alternatives</b>What will you do if they say no? Your answer is your leverage, even if you never say it out loud.</li>
-        <li><b>Bargain with intent</b>Name something specific, and trade for what you want instead of hoping for it.</li>
-      </ul>
-      <p class="check-q">Quick check: your manager says the budget is frozen. What's your best next move?</p>
-      <div class="opts" data-check>
-        <button class="opt" data-ok="0">Accept it. They've given you the answer.</button>
-        <button class="opt" data-ok="1">Ask what is and isn't frozen, and what they could do.</button>
-        <button class="opt" data-ok="0">Tell them you'll quit unless they find the money.</button>
-      </div>
-      <div data-check-result></div>
-      <p class="sim">In the full unit, you'd also study case briefs like Bruce Allyn's talks with the KGB.</p>`;
-    stage.querySelectorAll("[data-check] .opt").forEach((b) =>
-      b.addEventListener("click", () => {
-        stage.querySelectorAll("[data-check] .opt").forEach((x) => (x.disabled = true));
-        b.classList.add("picked");
-        const right = b.dataset.ok === "1";
-        stage.querySelector("[data-check-result]").innerHTML = `
-          <div class="answer" role="status"><b>${right ? "Exactly." : "Not quite."}</b> "Frozen" usually applies to one thing. Understanding the other side means finding out what they can still move.</div>
-          <div class="stage-actions"><button class="btn" data-next>Read your brief →</button></div>`;
-        stage.querySelector("[data-next]").addEventListener("click", brief);
-      })
-    );
-  }
+  // The live spar: their opener, then your line and their reply for each turn.
+  const LIVE = {
+    opener: "Thanks for grabbing time. What's on your mind?",
+    turns: [
+      { me: "Since my last review I ran the Q3 launch and brought churn reporting in-house. I'd like to talk about moving to $110k.",
+        them: "The launch went really well. But budgets are frozen until January." },
+      { me: "That makes sense. Help me understand what's frozen. What could we still do before January?",
+        them: "Base pay is locked. I do have a small retention pool, and we've talked about your title." },
+      { me: "I'd rather stay. A recruiter has me in final rounds, but if we can do the senior title now, $5k from the pool, and a written January review, I'm in.",
+        them: "Title and $5k I can do this week, and I'll put January in writing. Let me talk to HR." },
+    ],
+    deal: "Senior title · $5k now · January review in writing",
+  };
 
-  // ---- 2. Brief ----
-  function brief() {
-    step(1);
-    stage.innerHTML = `
-      <span class="hand">read this before you step in</span>
-      <h1>The raise.</h1>
-      <p class="stage-lede">You've asked your manager for a meeting. Your partner has been given a brief of their own, and you can't see it.</p>
-      <div class="brief-grid">
-        <div class="brief red-side">
-          <h3>Your brief</h3>
-          <ul>
-            <li>You're a product analyst, two years in, making $95k.</li>
-            <li>You want <b>$110k</b>.</li>
-            <li>You ran the Q3 launch and brought churn reporting in-house.</li>
-            <li>A recruiter has you in final rounds at around $105k. There's no offer yet.</li>
-          </ul>
-        </div>
-        <div class="brief blue-side">
-          <h3>Their brief</h3>
-          <p class="redacted">Your manager <i>can't change base pay until January</i>, but <i>has room on title</i> and <i>a small retention pool</i>.</p>
-          <small>Revealed when the spar ends</small>
-        </div>
-      </div>
-      <div class="stage-actions"><button class="btn" data-next>I'm ready →</button></div>`;
-    stage.querySelector("[data-next]").addEventListener("click", match);
-  }
+  const MODULE_STEPS = [
+    { id: "story", label: "The story", sub: "Who's at the table, what's at stake" },
+    { id: "p0", label: "The other side's interests", sub: "Speak it · instant feedback" },
+    { id: "p1", label: "Your walkaway (BATNA)", sub: "Speak it · instant feedback" },
+    { id: "p2", label: "Your opening move", sub: "Speak it · instant feedback" },
+    { id: "pro", label: "How a pro plays it", sub: "Compare with your answers" },
+    { id: "brief", label: "Spar checkpoint", sub: "Live with a partner · unlocks the next module", spar: true },
+    { id: "debrief", label: "Debrief", sub: "What would you do differently?" },
+  ];
 
-  // ---- 3. Match ----
-  function match() {
-    step(2);
-    stage.innerHTML = `
-      <span class="hand">show up as much as you want to</span>
-      <h1>How do you want to spar?</h1>
-      <p class="stage-lede">Masking is optional. You can change it for every spar.</p>
-      <div class="demo-toggles">
-        <label class="toggle"><input type="checkbox" data-t="video" ${state.video ? "checked" : ""}/><i></i><span>Hide my video behind an avatar</span></label>
-        <label class="toggle"><input type="checkbox" data-t="voice" ${state.voice ? "checked" : ""}/><i></i><span>Mask my voice</span></label>
-      </div>
-      <div data-match-area><div class="stage-actions"><button class="btn" data-find>Find me a partner →</button></div></div>`;
-    stage.querySelectorAll("[data-t]").forEach((t) =>
-      t.addEventListener("change", () => (state[t.dataset.t] = t.checked))
-    );
-    stage.querySelector("[data-find]").addEventListener("click", async () => {
-      const id = runId;
-      stage.querySelector("[data-match-area]").innerHTML =
-        `<div class="matching" role="status"><span class="spinner"></span>Looking for someone on the same module…</div>`;
-      await wait(1400);
-      if (id !== runId) return;
-      stage.querySelector("[data-match-area]").innerHTML = `
-        <div class="matching" role="status">✓ Matched. Your partner will play your manager, and they want this to go their way.</div>
-        <div class="stage-actions"><button class="btn" data-next>Step in →</button></div>`;
-      stage.querySelector("[data-next]").addEventListener("click", spar);
-      stage.querySelector("[data-next]").focus();
+  // Presenter sections, mapped to number keys 1-9.
+  const SECTIONS = [
+    { label: "Train home", go: "home" },
+    { label: "Module roadmap", go: "roadmap" },
+    { label: "The story", go: "story" },
+    { label: "Speak the framework", go: "p0" },
+    { label: "How a pro plays it", go: "pro" },
+    { label: "Find a partner", go: "match" },
+    { label: "Live spar", go: "live" },
+    { label: "Scorecard", go: "score" },
+    { label: "Spar tab", go: "sparhome" },
+  ];
+
+  // ------------------------------------------------------------------ state
+
+  let state;
+  function reset() {
+    state = { done: new Set(), takes: {}, mode: "live", hideVideo: false, disguise: true, moduleDone: false, via: "train" };
+  }
+  reset();
+
+  const partnerName = () => ({ live: "Alex", friend: "Sam", ai: "AI opponent" })[state.mode];
+  const stepIndex = (id) => MODULE_STEPS.findIndex((s) => s.id === id);
+  const currentStep = () => MODULE_STEPS.find((s) => !state.done.has(s.id));
+  const progress = () => Math.round((state.done.size / MODULE_STEPS.length) * 100);
+
+  // When jumping ahead, mark everything before the target as done with the stronger takes.
+  function prime(target) {
+    const order = ["story", "p0", "p1", "p2", "pro", "brief", "debrief"];
+    const stop = { story: 0, p0: 1, p1: 2, p2: 3, pro: 4, brief: 5, match: 5, live: 5, score: 6, debrief: 6, done: 7 }[target];
+    if (stop === undefined) return;
+    order.slice(0, stop).forEach((id, i) => {
+      state.done.add(id);
+      if (i >= 1 && i <= 3 && state.takes[i - 1] === undefined) state.takes[i - 1] = 1;
     });
   }
 
-  // ---- 4. Spar ----
-  function bubble(chat, who, text, cls) {
-    const p = document.createElement("div");
-    p.className = `bub ${cls}`;
-    const label = document.createElement("span");
-    label.className = "who";
-    label.textContent = who;
-    p.append(label, document.createTextNode(text));
-    chat.appendChild(p);
-    return p;
+  // ------------------------------------------------------------------ navigation
+
+  const history = [];
+  let current = null;
+  let primary = null; // what → does on this screen
+
+  function go(name, { push = true } = {}) {
+    epoch += 1;
+    if (push && current && current !== name) history.push(current);
+    current = name;
+    primary = null;
+    phone.classList.toggle("in-call", name === "live");
+    screen.scrollTop = 0;
+    SCREENS[name]();
+    const tab = name === "sparhome" || (state.via === "spar" && ["sparbrief", "match", "live", "score"].includes(name)) ? "spar" : "train";
+    document.querySelectorAll("[data-tab]").forEach((b) => {
+      b.classList.toggle("on", b.dataset.tab === tab);
+      b.setAttribute("aria-current", b.dataset.tab === tab ? "page" : "false");
+    });
+    const sec = SECTIONS.findIndex((s) => s.go === name);
+    guideEl.querySelectorAll("button").forEach((b, i) => b.classList.toggle("on", i === sec));
+    screen.focus({ preventScroll: true });
   }
 
-  function spar() {
-    step(3);
-    state.picks = [];
-    const you = [state.video ? "Avatar" : "Camera on", state.voice ? "voice masked" : "your voice"].join(", ");
-    stage.innerHTML = `
-      <div class="spar-head demo-spar-head">
-        <span class="live"><i></i>SCRIPTED SPAR</span>
-        <span class="round" data-round>ROUND 1 OF 3</span>
-      </div>
-      <div class="corners">
-        <div class="corner red"><span class="corner-tag">RED CORNER</span><b>You</b><small>${you}</small></div>
-        <div class="vs">VS</div>
-        <div class="corner blue"><span class="corner-tag">BLUE CORNER</span><b>Your partner</b><small>Playing your manager</small></div>
-      </div>
-      <div class="chat" data-chat aria-live="polite"></div>
-      <div data-turn></div>`;
-    const chat = stage.querySelector("[data-chat]");
-    bubble(chat, "YOUR PARTNER", ROUNDS[0].prompt, "them");
-    turn(0);
+  function back() {
+    if (!history.length) return;
+    go(history.pop(), { push: false });
   }
 
-  function turn(r) {
-    const area = stage.querySelector("[data-turn]");
-    stage.querySelector("[data-round]").textContent = `ROUND ${r + 1} OF 3`;
-    area.innerHTML = `<p class="check-q">What do you say?</p><div class="opts">${ROUNDS[r].options
-      .map((o, i) => `<button class="opt" data-i="${i}">${o.text}</button>`)
-      .join("")}</div>`;
-    area.querySelectorAll(".opt").forEach((b) =>
-      b.addEventListener("click", () => respond(r, ROUNDS[r].options[+b.dataset.i]))
-    );
+  function jump(name) {
+    reset();
+    if (name === "sparhome") state.via = "spar";
+    prime(name);
+    history.length = 0;
+    go(name, { push: false });
   }
 
-  async function respond(r, opt) {
-    const id = runId;
-    const chat = stage.querySelector("[data-chat]");
-    const area = stage.querySelector("[data-turn]");
-    state.picks.push(opt);
-    area.innerHTML = "";
-    bubble(chat, "YOU", opt.text, "you");
-    const typing = bubble(chat, "YOUR PARTNER", "…", "them typing");
-    typing.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
-    await wait(1300);
-    if (id !== runId) return;
-    typing.remove();
-    bubble(chat, "YOUR PARTNER", opt.reply, "them");
+  function toast(text) {
+    toastEl.textContent = text;
+    toastEl.hidden = false;
+    clearTimeout(toast.t);
+    toast.t = setTimeout(() => (toastEl.hidden = true), 2600);
+  }
 
-    if (r === ROUNDS.length - 1) {
-      await wait(600);
-      if (id !== runId) return;
-      area.innerHTML = `<div class="stage-actions"><button class="btn" data-next>See your scorecard →</button></div>`;
-      area.querySelector("[data-next]").addEventListener("click", review);
-      area.querySelector("[data-next]").scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
-      return;
+  const $ = (sel) => screen.querySelector(sel);
+  const on = (sel, fn) => { const el = $(sel); if (el) el.addEventListener("click", fn); return el; };
+  const scrollDown = () => { screen.scrollTop = screen.scrollHeight; };
+
+  function top(eyebrow, stepId) {
+    const i = stepId ? stepIndex(stepId) : -1;
+    const dots = i >= 0
+      ? `<div class="steps-dots" aria-label="Step ${i + 1} of ${MODULE_STEPS.length}">${MODULE_STEPS.map((s, j) => `<i class="${j < i ? "done" : j === i ? "cur" : ""}"></i>`).join("")}</div>`
+      : "";
+    return `<div class="top"><button class="back" data-back aria-label="Back">←</button><span class="eyebrow">${eyebrow}</span>${dots}</div>`;
+  }
+  function wireBack() { on("[data-back]", back); }
+
+  // ------------------------------------------------------------------ voice helpers
+
+  // Renders "text with [key ideas]" word by word into el, with key ideas highlighted.
+  async function stream(el, text, e, speed = 55) {
+    el.textContent = "";
+    for (const part of text.split(/(\[[^\]]+\])/).filter(Boolean)) {
+      const hl = part.startsWith("[");
+      const words = (hl ? part.slice(1, -1) : part).split(/(\s+)/).filter(Boolean);
+      const host = hl ? el.appendChild(document.createElement("mark")) : el;
+      for (const w of words) {
+        if (!alive(e)) return false;
+        host.appendChild(document.createTextNode(w));
+        if (w.trim()) await sleep(speed);
+      }
     }
+    return true;
+  }
+  const plain = (text) => text.replace(/[[\]]/g, "");
+
+  // A hold-to-talk mic. Pressing (mouse, touch, Space or →) "records" the scripted answer.
+  function mic(area, { label = "Hold to talk", small = false, onStart, onWords }) {
     area.innerHTML = `
-      <div class="pulse demo-pulse">
-        <span>Quick pulse: ${PULSES[r]}</span>
-        <div class="pulse-btns"><button>Yes</button><button>Sort of</button><button>No</button></div>
+      <div class="mic-area">
+        <button class="mic ${small ? "small" : ""}" aria-label="${label}">${ICON.mic}</button>
+        ${WAVE}
+        <span class="mic-label">${label}</span>
       </div>`;
-    area.querySelector(".pulse").scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
-    area.querySelectorAll(".pulse-btns button").forEach((b) =>
-      b.addEventListener("click", () => {
-        turn(r + 1);
-        area.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
-      })
-    );
-  }
-
-  // ---- 5. Review ----
-  // Set above the highest reachable totals (5, 4, 7): even the best line leaves room to improve.
-  const BEST = { o: 6, a: 5, i: 8 };
-
-  function score() {
-    const sum = { o: 0, a: 0, i: 0 };
-    state.picks.forEach((p) => { sum.o += p.o; sum.a += p.a; sum.i += p.i; });
-    const pct = (k) => Math.round((sum[k] / BEST[k]) * 100);
-    const parts = { o: pct("o"), a: pct("a"), i: pct("i") };
-    return { ...parts, total: Math.round((parts.o + parts.a + parts.i) / 3) };
-  }
-
-  function partnerNote(s) {
-    const asked = state.picks[1].o === 3;
-    const landed = asked
-      ? "When you asked what I could actually do, I stopped defending and started helping."
-      : state.picks[0].i === 3
-        ? "You opened with what you'd done and a clear number. That was hard to brush off."
-        : "You stayed in the room when it got uncomfortable. That counts.";
-    const next = s.o < 60
-      ? "I never felt like you were curious about my side. Try asking one more question before you respond."
-      : s.a < 60
-        ? "I had no idea you had other options, or if I did, it felt like a threat. Mention them calmly, as context."
-        : s.i < 60
-          ? "I wasn't sure what you actually wanted from me. Be more specific."
-          : "You could have asked for more. I had a little more room than I gave you.";
-    return { landed, next };
-  }
-
-  function evaluatorNote() {
-    const weakest = [...state.picks].map((p, i) => ({ p, i, v: p.o + p.a + p.i })).sort((x, y) => x.v - y.v)[0];
-    const notes = [
-      "This opening was your best chance to set the terms. A concrete record and a number would have given your manager something to work with.",
-      "A frozen budget was your cue to dig. This line didn't uncover what your manager could still move.",
-      "This was your moment to combine your alternative with a specific package. Ask for several things you can trade between.",
-    ];
-    if (weakest.v >= 4) {
-      return { line: state.picks[2].text, why: "This line used all three moves at once: a calm alternative, a specific package, and room for your manager to say yes." };
+    const btn = area.querySelector(".mic");
+    const wave = area.querySelector(".wave");
+    const lab = area.querySelector(".mic-label");
+    let busy = false;
+    async function start() {
+      if (busy || btn.disabled) return;
+      busy = true;
+      const e = epoch;
+      btn.classList.add("rec");
+      wave.classList.remove("idle");
+      lab.textContent = "Listening…";
+      if (onStart) onStart();
+      const ok = await onWords(e);
+      if (!ok || !alive(e)) return;
+      btn.classList.remove("rec");
+      wave.classList.add("idle");
+      lab.textContent = label;
+      busy = false;
     }
-    return { line: weakest.p.text, why: notes[weakest.i] };
+    btn.addEventListener("pointerdown", (ev) => { ev.preventDefault(); start(); });
+    btn.addEventListener("keydown", (ev) => { if (ev.key === " " || ev.key === "Enter") { ev.preventDefault(); start(); } });
+    return { start, btn, isBusy: () => busy, disable(v) { btn.disabled = v; } };
   }
 
-  // Single series, so no legend; end points are labelled directly and each marker has a tooltip.
-  function chart(latest) {
-    const history = [38, 47, 44, 58, latest];
-    const X = (i) => 22 + i * 69;
-    const Y = (v) => 110 - (v / 100) * 92;
-    const pts = history.map((v, i) => `${X(i)},${Y(v).toFixed(1)}`).join(" ");
-    const circles = history
-      .map((v, i) => `<circle cx="${X(i)}" cy="${Y(v).toFixed(1)}" r="5"><title>${i === 4 ? "This spar" : `Spar ${i + 1} (example)`}: ${v}</title></circle>`)
-      .join("");
-    const labelY = Y(latest) < 22 ? Y(latest) + 20 : Y(latest) - 11;
-    return `<svg class="progress" viewBox="0 0 320 130" role="img" aria-label="Line chart of spar scores. Four example sessions of 38, 47, 44 and 58, then this spar at ${latest}.">
-      <line class="grid" x1="12" x2="308" y1="110" y2="110"/>
-      <polyline class="series" points="${pts}"/>
-      <g class="pts">${circles}</g>
-      <text class="val" x="${X(4)}" y="${labelY.toFixed(1)}" text-anchor="middle">${latest}</text>
-      <text class="axis" x="${X(0)}" y="126" text-anchor="middle">Spar 1</text>
-      <text class="axis" x="${X(4)}" y="126" text-anchor="middle">This spar</text>
-    </svg>`;
-  }
+  // ------------------------------------------------------------------ screens
 
-  function review() {
-    step(4);
-    const s = score();
-    const out = state.picks[2].outcome;
-    const note = partnerNote(s);
-    const moment = evaluatorNote();
-    const talk = Math.round(state.picks.reduce((n, p) => n + p.talk, 0) / state.picks.length);
-    const cuts = state.picks.reduce((n, p) => n + p.cut, 0);
-    const listened = s.o >= 60 ? "Yes" : s.o >= 20 ? "Sort of" : "No";
+  const SCREENS = {
+    home() {
+      const p = progress();
+      const step = currentStep();
+      screen.innerHTML = `
+        <div class="app-head">
+          <div><span class="greet">Good morning</span><h1>Erica</h1></div>
+          <span class="streak">🔥 3-day streak</span>
+        </div>
+        <button class="continue" data-open>
+          <span class="eyebrow">${state.moduleDone ? "Completed" : p ? "Continue" : "Start here"}</span>
+          <h2>${CASE.title}</h2>
+          <p>${state.moduleDone ? "Next up: Negotiate a job offer" : `Next: ${step.label}`}</p>
+          <div class="bar"><i style="width:${p}%"></i></div>
+        </button>
 
-    try { sessionStorage.setItem("inf_demo", "1"); } catch {}
+        <section class="sec">
+          <h3>Negotiation</h3>
+          <div class="row">
+            ${modCard({ title: "Ask your manager for a raise", c: "Workplace", d: 2, len: "15 min", p, key: "raise" })}
+            ${modCard({ title: "Negotiating with the KGB", c: "With Bruce Allyn", d: 3, len: "25 min", soon: true, key: "kgb" })}
+            ${modCard({ title: "Negotiate a job offer", c: "Career", d: 2, len: "15 min", p: 0, locked: !state.moduleDone, key: "offer" })}
+          </div>
+        </section>
+        <section class="sec">
+          <h3>Building rapport</h3>
+          <div class="row">
+            ${modCard({ title: "Reconnect with an old friend", c: "Friendship", d: 1, len: "10 min", p: 0 })}
+            ${modCard({ title: "Your first week on a new team", c: "Workplace", d: 1, len: "10 min", p: 0 })}
+          </div>
+        </section>
+        <section class="sec">
+          <h3>Persuasion</h3>
+          <div class="row">
+            ${modCard({ title: "Pitch your idea to a skeptic", c: "Workplace", d: 2, len: "15 min", p: 0 })}
+            ${modCard({ title: "Change your manager's mind", c: "Workplace", d: 3, len: "20 min", p: 0 })}
+          </div>
+        </section>
+        <section class="sec">
+          <h3>Giving hard feedback</h3>
+          <div class="row">
+            ${modCard({ title: "Tell a teammate they're missing deadlines", c: "Workplace", d: 2, len: "12 min", p: 0 })}
+            ${modCard({ title: "Push back on a close friend", c: "Friendship", d: 2, len: "12 min", p: 0 })}
+          </div>
+        </section>`;
+      on("[data-open]", () => go("roadmap"));
+      screen.querySelectorAll(".mod").forEach((m) =>
+        m.addEventListener("click", () => {
+          if (m.dataset.key === "raise") return go("roadmap");
+          if (m.dataset.key === "kgb") return toast("Coming soon: Bruce Allyn's real negotiation with the KGB.");
+          if (m.dataset.key === "offer" && !state.moduleDone) return toast("Finish the raise module to unlock this one.");
+          toast("This walkthrough covers the raise module.");
+        })
+      );
+      primary = () => go("roadmap");
+    },
 
-    stage.innerHTML = `
-      <span class="hand">good spar</span>
-      <h1>Here's how it went.</h1>
-      <div class="outcome"><h2>${out.title}</h2><p>${out.body}</p></div>
-      <div class="score-big">${s.total}<small>/100 spar score</small></div>
+    roadmap() {
+      const cur = currentStep();
+      screen.innerHTML = `
+        ${top("Negotiation")}
+        <div class="mod-head">
+          <h1 class="title">${CASE.title}</h1>
+          <div class="mod-meta"><span>Medium</span><span>15 min</span><span>${progress()}% done</span></div>
+        </div>
+        <ol class="trail">
+          ${MODULE_STEPS.map((s, i) => {
+            const done = state.done.has(s.id);
+            const isCur = cur && cur.id === s.id;
+            const cls = done ? "done" : isCur ? "cur" : "lock";
+            const mark = done ? "✓" : isCur ? i + 1 : "🔒";
+            return `<li><button class="node ${cls} ${s.spar ? "spar" : ""}" data-step="${s.id}" ${!done && !isCur ? "disabled" : ""}>
+              <span class="dot">${s.spar && !done ? "⚔" : mark}</span>
+              <span class="lbl"><b>${s.label}</b><small>${s.sub}</small></span></button></li>`;
+          }).join("")}
+        </ol>
+        ${cur ? `<div class="actions"><button class="btn" data-go>${state.done.size ? "Continue" : "Start"}: ${cur.label}</button></div>` : ""}`;
+      wireBack();
+      screen.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => go(b.dataset.step)));
+      if (cur) { on("[data-go]", () => go(cur.id)); primary = () => go(cur.id); }
+      else primary = () => go("home");
+    },
 
-      <div class="results">
-        <section class="panel panel-blue">
-          <h3>From your partner</h3>
-          <p><b>What landed:</b> "${note.landed}"</p>
-          <p><b>Try next time:</b> "${note.next}"</p>
-          <p><b>Felt listened to:</b> ${listened}</p>
+    story() {
+      screen.innerHTML = `
+        ${top("Step 1 · The story", "story")}
+        <h1 class="title">The raise</h1>
+        <div class="scene" aria-hidden="true">
+          <svg viewBox="0 0 340 150">
+            <rect x="0" y="112" width="340" height="38" fill="#cdd8f5"/>
+            <rect x="95" y="92" width="150" height="14" rx="4" fill="#fff" stroke="#1e2232" stroke-width="2.5"/>
+            <g transform="translate(40 26) scale(.72)">${ICON.person("#f1c7a8", "#e0452f", "#1e2232").replace(/<\/?svg[^>]*>/g, "")}</g>
+            <g transform="translate(214 26) scale(.72)">${ICON.person("#d9a47e", "#2f5fdc", "#5a3a22").replace(/<\/?svg[^>]*>/g, "")}</g>
+            <text x="83" y="140" text-anchor="middle" font-family="Outfit" font-weight="700" font-size="13" fill="#1e2232">You</text>
+            <text x="257" y="140" text-anchor="middle" font-family="Outfit" font-weight="700" font-size="13" fill="#1e2232">Dana, your manager</text>
+          </svg>
+        </div>
+        <div class="facts">
+          <div class="fact"><span>👥</span><div><b>At the table</b>You and Dana, your manager of two years.</div></div>
+          <div class="fact"><span>💰</span><div><b>What's at stake</b>You make $95k. You want $110k.</div></div>
+          <div class="fact"><span>⚠️</span><div><b>What's gone wrong</b>Last review: 3% and "the budget's tight."</div></div>
+        </div>
+        <div class="player">
+          <button class="play" data-play aria-label="Play the story">▶</button>
+          <div class="track"><i data-track></i></div>
+          <small data-time>0:00 / 0:24</small>
+        </div>
+        <div class="captions" data-cc aria-live="polite"><p class="dim">Tap play to hear the story.</p></div>
+        <div class="actions"><button class="btn" data-next disabled>Continue</button></div>`;
+      wireBack();
+      const nextBtn = $("[data-next]");
+      let played = false;
+      async function play() {
+        if (played) return;
+        played = true;
+        const e = epoch;
+        const cc = $("[data-cc]");
+        const track = $("[data-track]");
+        const time = $("[data-time]");
+        $("[data-play]").textContent = "❚❚";
+        cc.innerHTML = "";
+        for (let i = 0; i < STORY.length; i++) {
+          const p = cc.appendChild(document.createElement("p"));
+          if (!(await stream(p, STORY[i], e, 45))) return;
+          track.style.width = `${((i + 1) / STORY.length) * 100}%`;
+          time.textContent = `0:${String(Math.round(((i + 1) / STORY.length) * 24)).padStart(2, "0")} / 0:24`;
+          await sleep(250);
+        }
+        if (!alive(e)) return;
+        $("[data-play]").textContent = "↺";
+        nextBtn.disabled = false;
+        primary = finish;
+      }
+      function finish() { state.done.add("story"); go("p0"); }
+      on("[data-play]", play);
+      nextBtn.addEventListener("click", finish);
+      primary = play;
+    },
+
+    p0() { promptScreen(0); },
+    p1() { promptScreen(1); },
+    p2() { promptScreen(2); },
+
+    pro() {
+      const rows = PRO.map((r, i) => {
+        const t = PROMPTS[i].takes[state.takes[i] ?? 0];
+        return `<div class="card"><h3>${r.h}</h3>
+          <p class="you">You: "${plain(t.text)}"</p>
+          <p class="pro">${r.pro}</p>
+          <span class="verdict ${t.good ? "yes" : "part"}">${t.good ? "✓ You got there" : "◐ Partly. Worth another take"}</span></div>`;
+      }).join("");
+      screen.innerHTML = `
+        ${top("Step 5 · Compare", "pro")}
+        <h1 class="title">How a pro plays it</h1>
+        <p class="lead">Your answers next to the expert approach.</p>
+        <div class="cmp">${rows}</div>
+        <div class="actions"><button class="btn" data-next>Build my spar brief</button></div>`;
+      wireBack();
+      const next = () => { state.done.add("pro"); go("brief"); };
+      on("[data-next]", next);
+      primary = next;
+    },
+
+    brief() {
+      const interests = PROMPTS[0].takes[state.takes[0] ?? 1].ideas.join(", ");
+      screen.innerHTML = `
+        ${top("Step 6 · Spar checkpoint", "brief")}
+        <span class="hand">your brief, built from your answers</span>
+        <h1 class="title">Time to spar it</h1>
+        <p class="lead">You'll play this live with a partner. They get a different brief.</p>
+        <div class="brief">
+          <div class="card"><span class="k">Your role</span>Product analyst, asking Dana for a raise</div>
+          <div class="card"><span class="k">Your goal</span>${CASE.goal} <span class="from">· from your opening move</span></div>
+          <div class="card"><span class="k">Your walkaway</span>${CASE.walkaway} <span class="from">· from your BATNA</span></div>
+          <div class="card"><span class="k">Their likely interests</span>${interests} <span class="from">· from your notes</span></div>
+          <div class="card them"><span class="k">Your partner's brief</span><span class="redact">Base pay frozen until January, has a small retention pool</span><br><small class="from">Revealed after the spar</small></div>
+        </div>
+        <div class="actions"><button class="btn" data-next>Find a partner</button></div>`;
+      wireBack();
+      const next = () => go("match");
+      on("[data-next]", next);
+      primary = next;
+    },
+
+    sparhome() {
+      state.via = "spar";
+      screen.innerHTML = `
+        <div class="app-head"><div><span class="eyebrow">Open sparring</span><h1>Spar</h1></div></div>
+        <button class="spar-now" data-now>Spar now<small>Matched in seconds</small></button>
+        <h3 style="font-size:1.15rem;margin-bottom:10px">Case library</h3>
+        <div class="lib">
+          <button data-case="raise"><span class="ic">💼</span><span><b>The raise</b><small>Negotiation · Medium · 10 min</small></span></button>
+          <button data-case="x"><span class="ic">📄</span><span><b>The job offer</b><small>Negotiation · Medium · 12 min</small></span></button>
+          <button data-case="x"><span class="ic">🏠</span><span><b>The lease renewal</b><small>Negotiation · Easy · 8 min</small></span></button>
+          <button data-case="x"><span class="ic">🤝</span><span><b>Splitting co-founder equity</b><small>Negotiation · Hard · 15 min</small></span></button>
+          <button data-case="x"><span class="ic">🗣️</span><span><b>Defend your roadmap</b><small>Persuasion · Medium · 10 min</small></span></button>
+          <button class="soon" data-case="kgb"><span class="ic">🕵️</span><span><b>Negotiating with the KGB</b><small>With Bruce Allyn · Coming soon</small></span></button>
+        </div>`;
+      const start = () => go("sparbrief");
+      on("[data-now]", start);
+      screen.querySelectorAll("[data-case]").forEach((b) =>
+        b.addEventListener("click", () => {
+          if (b.dataset.case === "raise") return start();
+          toast(b.dataset.case === "kgb" ? "Coming soon: Bruce Allyn's real negotiation with the KGB." : "This walkthrough plays The raise.");
+        })
+      );
+      primary = start;
+    },
+
+    sparbrief() {
+      screen.innerHTML = `
+        ${top("Case brief")}
+        <h1 class="title">The raise</h1>
+        <p class="lead">Your partner plays your manager, with a brief you can't see.</p>
+        <div class="brief">
+          <div class="card"><span class="k">Your role</span>Product analyst, two years in, making $95k</div>
+          <div class="card"><span class="k">Your goals</span>Get to $110k, or a clear path there</div>
+          <div class="card"><span class="k">Your limits</span>A recruiter has you near $105k. Below that, you'd consider leaving.</div>
+          <div class="card them"><span class="k">What you know about them</span>Your manager values you, but just said budgets are tight.</div>
+        </div>
+        <h3 style="font-size:1.05rem;margin:18px 0 0">Record a 30-second plan</h3>
+        <div data-mic></div>
+        <div class="said" data-said hidden><span class="eyebrow">Your plan</span><div class="transcript" data-tx></div></div>
+        <div class="actions"><button class="btn" data-next disabled>Find a partner</button></div>`;
+      wireBack();
+      const next = $("[data-next]");
+      const m = mic($("[data-mic]"), {
+        onStart: () => { $("[data-said]").hidden = false; },
+        onWords: async (e) => {
+          const ok = await stream($("[data-tx]"), PLAN, e);
+          if (ok) { next.disabled = false; m.disable(true); primary = () => go("match"); scrollDown(); }
+          return ok;
+        },
+      });
+      next.addEventListener("click", () => go("match"));
+      primary = m.start;
+    },
+
+    match() {
+      const opt = (k, ic, t, s) => `<button class="opt ${state.mode === k ? "on" : ""}" data-mode="${k}"><span class="ic">${ic}</span><span><b>${t}</b><small>${s}</small></span><span class="radio"></span></button>`;
+      screen.innerHTML = `
+        ${top(state.via === "spar" ? "Spar now" : "Spar checkpoint")}
+        <h1 class="title">Who do you want to spar?</h1>
+        <div class="opts">
+          ${opt("live", "🧑", "Live partner", "Someone working on this case right now")}
+          ${opt("friend", "💌", "Invite a friend", "Send them the other brief")}
+          ${opt("ai", "🤖", "Warm up with AI", "For when no one's around")}
+        </div>
+        <div class="toggles">
+          <button class="tg" data-tg="disguise" aria-pressed="${state.disguise}"><span>Disguise my voice</span><i></i></button>
+          <button class="tg" data-tg="hideVideo" aria-pressed="${state.hideVideo}"><span>Hide my video (use an avatar)</span><i></i></button>
+        </div>
+        <div data-area><div class="actions"><button class="btn" data-find>Find my partner</button></div></div>`;
+      wireBack();
+      screen.querySelectorAll("[data-mode]").forEach((b) =>
+        b.addEventListener("click", () => {
+          state.mode = b.dataset.mode;
+          screen.querySelectorAll("[data-mode]").forEach((x) => x.classList.toggle("on", x === b));
+        })
+      );
+      screen.querySelectorAll("[data-tg]").forEach((b) =>
+        b.addEventListener("click", () => {
+          state[b.dataset.tg] = !state[b.dataset.tg];
+          b.setAttribute("aria-pressed", String(state[b.dataset.tg]));
+        })
+      );
+      async function find() {
+        const e = epoch;
+        primary = null;
+        const area = $("[data-area]");
+        const waiting = { live: "Finding someone on this case…", friend: "Waiting for Sam to join…", ai: "Setting up your AI opponent…" }[state.mode];
+        area.innerHTML = `<div class="searching fade-in"><div class="radar"><span>${state.mode === "ai" ? "🤖" : "🧑"}</span></div><b>${waiting}</b></div>`;
+        scrollDown();
+        await sleep(1500);
+        if (!alive(e)) return;
+        const who = { live: "Alex · on the same case", friend: "Sam · your friend", ai: "AI opponent · manager persona, medium" }[state.mode];
+        const tag = state.mode === "ai" ? "Ready when you are" : "Matched · playing Dana, your manager";
+        area.innerHTML = `
+          <div class="matched fade-in"><span class="av">${state.mode === "ai" ? "🤖" : partnerName()[0]}</span><div><b>${who}</b><br><small class="from">${tag}</small></div></div>
+          ${state.mode === "ai" ? `<div class="actions"><button class="btn" data-start>Start spar</button></div>` : `
+          <div class="consent fade-in">
+            <p><b>This spar will be recorded</b> so you both get feedback. Both partners must agree.</p>
+            <div class="agree-row"><span data-a-me>You</span><span data-a-them>${partnerName()}</span></div>
+            <button class="btn" data-agree>I agree</button>
+          </div>`}`;
+        scrollDown();
+        if (state.mode === "ai") {
+          on("[data-start]", () => go("live"));
+          primary = () => go("live");
+          return;
+        }
+        async function agree() {
+          const e2 = epoch;
+          primary = null;
+          $("[data-a-me]").classList.add("ok");
+          $("[data-a-me]").textContent = "✓ You agreed";
+          const btn = $("[data-agree]");
+          btn.disabled = true;
+          btn.textContent = `Waiting for ${partnerName()}…`;
+          await sleep(900);
+          if (!alive(e2)) return;
+          $("[data-a-them]").classList.add("ok");
+          $("[data-a-them]").textContent = `✓ ${partnerName()} agreed`;
+          btn.disabled = false;
+          btn.textContent = "Start spar";
+          btn.onclick = () => go("live");
+          primary = () => go("live");
+        }
+        $("[data-agree]").addEventListener("click", agree, { once: true });
+        primary = agree;
+      }
+      on("[data-find]", find);
+      primary = find;
+    },
+
+    live() {
+      const e = epoch;
+      const masked = state.mode !== "ai";
+      const partner = state.mode === "ai" ? "AI opponent" : `${partnerName()} · playing Dana`;
+      screen.innerHTML = `
+        <div class="call">
+          <div class="call-top"><span class="recdot">REC</span><span>The raise · ${state.mode === "ai" ? "AI warm-up" : "Live spar"}</span><span class="timer" data-timer>08:00</span></div>
+          <div class="pin"><b>📌 YOUR BRIEF</b> · Goal ${CASE.goal.split(",")[0]} · Walkaway ~$105k offer · Ask what they can still move</div>
+          <div class="tiles">
+            <div class="tile-main" data-them>
+              ${state.mode === "ai" ? '<span style="font-size:4.5rem">🤖</span>' : masked ? ICON.masked : ""}
+              ${state.mode !== "ai" ? '<span class="tile-badge">Voice disguised</span>' : ""}
+              <span class="tile-name">${partner}</span>
+            </div>
+            <div class="tile-self" data-me>${state.hideVideo ? ICON.masked : ICON.person("#f1c7a8", "#e0452f", "#1e2232")}</div>
+          </div>
+          <div class="cc" data-cc aria-live="polite"></div>
+          <div data-ctl></div>
+          <div data-overlay></div>
+        </div>`;
+      // Timer runs while this screen is open.
+      let secs = 480;
+      const timerEl = $("[data-timer]");
+      const tick = setInterval(() => {
+        if (!alive(e)) return clearInterval(tick);
+        secs = Math.max(0, secs - 1);
+        timerEl.textContent = `${String(Math.floor(secs / 60)).padStart(2, "0")}:${String(secs % 60).padStart(2, "0")}`;
+      }, 1000);
+
+      const cc = $("[data-cc]");
+      const themTile = $("[data-them]");
+      const meTile = $("[data-me]");
+      function line(who, cls) {
+        const p = document.createElement("p");
+        p.className = cls;
+        p.innerHTML = `<span class="who">${who}</span>`;
+        const t = p.appendChild(document.createElement("span"));
+        cc.appendChild(p);
+        while (cc.children.length > 3) cc.firstElementChild.remove();
+        return t;
+      }
+      async function themSay(text) {
+        themTile.classList.add("talking");
+        await sleep(500);
+        const ok = await stream(line(partner.split(" ·")[0].toUpperCase(), "them"), text, e, 50);
+        themTile.classList.remove("talking");
+        return ok;
+      }
+
+      let turn = 0;
+      let m;
+      function yourTurn() {
+        m = mic($("[data-ctl]"), {
+          label: "Hold to speak",
+          onWords: async (e2) => {
+            meTile.classList.add("talking");
+            const ok = await stream(line("YOU", "me"), LIVE.turns[turn].me, e2, 50);
+            meTile.classList.remove("talking");
+            if (!ok) return false;
+            m.disable(true);
+            primary = null;
+            if (!(await themSay(LIVE.turns[turn].them))) return false;
+            turn += 1;
+            if (turn === 1) checkIn();
+            else if (turn < LIVE.turns.length) { m.disable(false); primary = m.start; }
+            else finish();
+            return true;
+          },
+        });
+        primary = m.start;
+      }
+
+      function checkIn() {
+        const ov = $("[data-overlay]");
+        ov.innerHTML = `<div class="overlay fade-in">
+          <span class="eyebrow">Quick check-in · only you see this</span>
+          <h3>What's your read on them so far?</h3>
+          <div class="transcript" data-ctx></div>
+          <div data-cmic></div></div>`;
+        const cm = mic(ov.querySelector("[data-cmic]"), {
+          small: true,
+          label: "Hold to answer",
+          onWords: async (e2) => {
+            const ok = await stream(ov.querySelector("[data-ctx]"), CHECKIN, e2, 45);
+            if (!ok) return false;
+            await sleep(700);
+            if (!alive(e2)) return false;
+            ov.innerHTML = "";
+            m.disable(false);
+            primary = m.start;
+            return true;
+          },
+        });
+        primary = cm.start;
+      }
+
+      function finish() {
+        $("[data-ctl]").innerHTML = `
+          <div class="deal fade-in"><b>DEAL REACHED</b>${LIVE.deal}</div>
+          <button class="btn" data-end>End spar · see scorecard</button>`;
+        const end = () => { state.done.add("brief"); go("score"); };
+        on("[data-end]", end);
+        scrollDown();
+        primary = end;
+      }
+
+      (async () => {
+        $("[data-ctl]").innerHTML = `<p class="mic-label" style="text-align:center">Connecting…</p>`;
+        await sleep(700);
+        if (!alive(e)) return;
+        if (!(await themSay(LIVE.opener))) return;
+        yourTurn();
+      })();
+    },
+
+    score() {
+      try { sessionStorage.setItem("inf_demo", "1"); } catch {}
+      const first = PROMPTS[2].takes[0].text;
+      screen.innerHTML = `
+        ${top("Scorecard")}
+        <h1 class="title">Nice spar.</h1>
+        <div class="deal"><b>THE DEAL YOU REACHED</b>${LIVE.deal}</div>
+        <div class="score-hero">
+          <div class="ring"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5" fill="none" stroke="#ebe8e1" stroke-width="4"/><circle cx="18" cy="18" r="15.5" fill="none" stroke="#e0452f" stroke-width="4" stroke-linecap="round" stroke-dasharray="97.4" stroke-dashoffset="${97.4 * (1 - 0.84)}"/></svg><b>84</b></div>
+          <div><b>Spar score</b><p class="lead" style="margin:0">Strong opening and a clean package. Your walkaway came in late.</p></div>
+        </div>
+
+        <section class="card panel">
+          <h3>AI feedback · negotiation rubric</h3>
+          ${meter("Understood the other side", 88)}${meter("Knew your walkaway", 74)}${meter("Bargained with intent", 90)}
         </section>
 
-        <section class="panel">
-          <h3>From the AI evaluator</h3>
-          <div class="meter"><span>Understood the other side</span><b>${s.o}</b><div class="track"><i style="width:${s.o}%"></i></div></div>
-          <div class="meter"><span>Knew your alternatives</span><b>${s.a}</b><div class="track"><i style="width:${s.a}%"></i></div></div>
-          <div class="meter"><span>Bargained with intent</span><b>${s.i}</b><div class="track"><i style="width:${s.i}%"></i></div></div>
+        <section class="card panel">
+          <h3>From ${state.mode === "ai" ? "your AI opponent" : partnerName()}</h3>
+          ${rate("Felt listened to", 5)}${rate("Was clear about what they wanted", 4)}${rate("Stayed calm under pressure", 4)}
+          <p class="quote">"When you asked what I could still do, I stopped defending and started helping."</p>
         </section>
 
-        <section class="panel full">
-          <h3>The moment that mattered</h3>
-          <p class="moment">"${moment.line}"</p>
-          <p>${moment.why}</p>
-          <dl class="speech">
-            <div><dt>Your talk time</dt><dd>${talk}%</dd></div>
-            <div><dt>Interruptions</dt><dd>${cuts}</dd></div>
-            <div><dt>Pace</dt><dd>${talk > 55 ? "Rushed" : "Steady"}</dd></div>
+        <section class="card panel">
+          <h3>How you sounded</h3>
+          <dl class="stats">
+            <div><dt>Talk time</dt><dd>48%</dd></div>
+            <div><dt>Interruptions</dt><dd>0</dd></div>
+            <div><dt>Pace</dt><dd>148<small style="font-size:.6em"> wpm</small></dd></div>
           </dl>
-          <p class="sim">Estimated from your choices in this preview. In a real spar, these are measured from your audio.</p>
         </section>
 
-        <section class="panel panel-red">
+        <section class="card panel">
+          <h3>Your voice journey</h3>
+          ${clip("first", "Your first take", "Opening move, take 1", plain(first))}
+          ${clip("now", "In this spar", "Opening line, live", LIVE.turns[0].me)}
+        </section>
+
+        <section class="card panel" style="background:var(--blue-soft)">
           <h3>Their brief, revealed</h3>
-          <p>Base pay was locked until January. They had room on title and a small retention pool, and they really didn't want to lose you.</p>
+          <p style="margin:0">Base pay was frozen until January, but Dana had a small retention pool and really didn't want to lose you.</p>
         </section>
 
-        <section class="panel">
-          <h3>Your progress</h3>
-          ${chart(s.total)}
-          <p class="sim">The earlier sessions are examples. Every real spar adds to your record.</p>
-        </section>
-      </div>
+        <div class="actions"><button class="btn" data-next>${state.via === "spar" ? "Done" : "Debrief"}</button></div>`;
+      wireBack();
+      requestAnimationFrame(() => screen.querySelectorAll(".meter .trk i").forEach((i) => (i.style.width = i.dataset.w)));
+      screen.querySelectorAll("[data-clip]").forEach((b) => b.addEventListener("click", () => playClip(b)));
+      const next = () => (state.via === "spar" ? go("sparhome") : go("debrief"));
+      on("[data-next]", next);
+      primary = next;
+    },
 
-      <div class="demo-final">
-        <a class="btn" href="/#join">Spar a real person: join the waitlist →</a>
-        <button class="btn btn-ghost" data-rematch>Run it back</button>
-      </div>`;
-    stage.querySelector("[data-rematch]").addEventListener("click", () => {
-      runId += 1;
-      match();
-    });
+    debrief() {
+      screen.innerHTML = `
+        ${top("Step 7 · Debrief", "debrief")}
+        <h1 class="title">One last thing</h1>
+        <div class="q">What would you do differently?</div>
+        <div data-mic></div>
+        <div class="said" data-said hidden><span class="eyebrow">Your reflection</span><div class="transcript" data-tx></div></div>
+        <div class="actions"><button class="btn" data-next disabled>Finish module</button></div>`;
+      wireBack();
+      const next = $("[data-next]");
+      const finish = () => { state.done.add("debrief"); state.moduleDone = true; go("done"); };
+      const m = mic($("[data-mic]"), {
+        onStart: () => { $("[data-said]").hidden = false; },
+        onWords: async (e) => {
+          const ok = await stream($("[data-tx]"), DEBRIEF, e);
+          if (ok) { next.disabled = false; m.disable(true); primary = finish; scrollDown(); }
+          return ok;
+        },
+      });
+      next.addEventListener("click", finish);
+      primary = m.start;
+    },
+
+    done() {
+      screen.innerHTML = `
+        <div class="done-hero">
+          <div class="big">🏆</div>
+          <span class="hand">module complete</span>
+          <h1 class="title">You asked for the raise.</h1>
+          <p class="lead">Three framework reps, one live spar, and a deal on the table.</p>
+        </div>
+        <div class="unlock"><span style="font-size:1.6rem">🔓</span><div><b>Unlocked: Negotiate a job offer</b><br><small class="from">Next in Negotiation</small></div></div>
+        <a class="btn" href="/#join">Spar for real: join the waitlist</a>
+        <div class="actions"><button class="btn ghost" data-next>Back to Train</button></div>`;
+      const next = () => { history.length = 0; go("home", { push: false }); };
+      on("[data-next]", next);
+      primary = next;
+    },
+  };
+
+  function modCard({ title, c, d, len, p = 0, locked, soon, key = "" }) {
+    const diff = `<span class="diff" aria-label="Difficulty ${d} of 3">${[1, 2, 3].map((n) => `<i class="${n <= d ? "on" : ""}"></i>`).join("")}</span>`;
+    const cls = soon ? "feature" : locked ? "locked" : "";
+    return `<button class="mod ${cls}" data-key="${key}">
+      ${soon ? '<span class="tag">Coming soon</span>' : locked ? '<span class="tag">🔒 Locked</span>' : `<span class="case">${c}</span>`}
+      <h4>${title}</h4>
+      ${soon ? `<span class="case">${c}</span>` : ""}
+      <span class="meta">${diff}<span>${len}</span>${p ? `<span>${p}%</span>` : ""}</span>
+      ${!soon && !locked ? `<span class="mbar"><i style="width:${p}%"></i></span>` : ""}
+    </button>`;
   }
 
-  learn();
+  // ------------------------------------------------------------------ framework prompt screen
+
+  function promptScreen(i) {
+    const P = PROMPTS[i];
+    const id = `p${i}`;
+    let take = -1;
+    screen.innerHTML = `
+      ${top(`Step ${i + 2} · Framework`, id)}
+      <h1 class="title">${P.step}</h1>
+      <div class="q">${P.q}</div>
+      <div data-mic></div>
+      <div data-out></div>
+      <div class="actions" data-actions hidden>
+        <button class="btn ghost" data-redo>↺ Re-record</button>
+        <button class="btn" data-next>Continue</button>
+      </div>`;
+    wireBack();
+    const out = $("[data-out]");
+    const acts = $("[data-actions]");
+    const redo = $("[data-redo]");
+    const finish = () => {
+      state.takes[i] = Math.max(take, 0);
+      state.done.add(id);
+      go(i < 2 ? `p${i + 1}` : "pro");
+    };
+    const m = mic($("[data-mic]"), {
+      onStart: () => {
+        take += 1;
+        acts.hidden = true;
+        out.innerHTML = `<div class="said"><span class="eyebrow">You said ${take ? '<span class="take">TAKE 2</span>' : ""}</span><div class="transcript" data-tx></div></div>`;
+      },
+      onWords: async (e) => {
+        const T = P.takes[take];
+        if (!(await stream(out.querySelector("[data-tx]"), T.text, e))) return false;
+        await sleep(250);
+        if (!alive(e)) return false;
+        out.insertAdjacentHTML("beforeend", `
+          <div class="fade-in">
+            <div class="ideas">${T.ideas.map((x) => `<span>✓ ${x}</span>`).join("")}</div>
+            <div class="nudge ${T.good ? "good" : ""}"><span class="ic">${T.good ? "🎯" : "💡"}</span><span>${T.nudge}</span></div>
+          </div>`);
+        acts.hidden = false;
+        if (take >= 1) { redo.hidden = true; m.disable(true); primary = finish; }
+        else primary = m.start; // → on a first take re-records, to show the improvement
+        scrollDown();
+        return true;
+      },
+    });
+    redo.addEventListener("click", m.start);
+    $("[data-next]").addEventListener("click", finish);
+    primary = m.start;
+  }
+
+  // ------------------------------------------------------------------ scorecard helpers
+
+  const meter = (label, v) =>
+    `<div class="meter"><span>${label}</span><b>${v}</b><div class="trk"><i data-w="${v}%" style="width:0"></i></div></div>`;
+  const rate = (label, n) =>
+    `<div class="rate"><span>${label}</span><span class="pips" aria-label="${n} of 5">${[1, 2, 3, 4, 5].map((k) => `<i class="${k <= n ? "on" : ""}"></i>`).join("")}</span></div>`;
+  const clip = (k, title, sub, text) =>
+    `<div class="clip"><div class="clip-head"><button class="play" data-clip="${k}" aria-label="Play ${title}">▶</button><div><b>${title}</b><small>${sub}</small></div></div>
+      <p>${text.split(" ").map((w) => `<span class="w">${w}</span>`).join(" ")}</p></div>`;
+
+  async function playClip(btn) {
+    const e = epoch;
+    const words = btn.closest(".clip").querySelectorAll(".w");
+    btn.textContent = "❚❚";
+    for (const w of words) {
+      if (!alive(e)) return;
+      w.classList.add("lit");
+      await sleep(110);
+      w.classList.remove("lit");
+    }
+    if (alive(e)) btn.textContent = "▶";
+  }
+
+  // ------------------------------------------------------------------ wiring
+
+  guideEl.innerHTML = SECTIONS.map((s, i) => `<li><button data-jump="${s.go}"><span class="n">${i + 1}</span>${s.label}</button></li>`).join("");
+  guideEl.querySelectorAll("[data-jump]").forEach((b) => b.addEventListener("click", () => jump(b.dataset.jump)));
+
+  document.querySelectorAll("[data-tab]").forEach((b) =>
+    b.addEventListener("click", () => {
+      if (b.dataset.tab === "spar") go("sparhome");
+      else { state.via = "train"; go("home"); }
+    })
+  );
+
+  document.addEventListener("keydown", (ev) => {
+    if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    if (ev.key === "ArrowRight") { ev.preventDefault(); if (primary) primary(); }
+    else if (ev.key === "ArrowLeft") { ev.preventDefault(); back(); }
+    else if (ev.key === "r" || ev.key === "R") { reset(); history.length = 0; go("home", { push: false }); }
+    else if (/^[1-9]$/.test(ev.key)) jump(SECTIONS[+ev.key - 1].go);
+    else if (ev.key === " " && current && document.activeElement && !document.activeElement.closest("button")) {
+      // Space anywhere acts like holding the mic when there is one.
+      const micBtn = screen.querySelector(".mic:not([disabled])");
+      if (micBtn) { ev.preventDefault(); micBtn.dispatchEvent(new PointerEvent("pointerdown")); }
+    }
+  });
+
+  go("home", { push: false });
 })();

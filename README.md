@@ -10,9 +10,10 @@ People learn negotiation frameworks in short lessons, then spar live with a real
 public/                what visitors see (Vercel serves this folder)
   index.html           landing page text and layout
   script.js            landing page behavior, plus the "pick your conversation" text
-  demo.html            demo page shell, including the yellow banner
-  demo.js              all demo text and logic (scripted, no backend)
-  styles.css           shared styles; colors and fonts are the variables at the top
+  styles.css           landing page styles; colors and fonts are the variables at the top
+  demo.html            /demo: clickable app prototype (phone frame + presenter guide)
+  demo.js              all demo text and logic (scripted: no mic, no backend)
+  demo.css             demo styles
   favicon.svg          tab icon
 api/subscribe.js       POST /api/subscribe: validates a sign-up and saves it
 lib/supabase.js        tiny Supabase client (server-side only, no dependencies)
@@ -29,9 +30,10 @@ No build step and no npm dependencies.
 |---|---|
 | Landing page sections | `public/index.html`: each section starts with a comment such as `<!-- PRICING -->` (HERO, SCENARIOS, HOW IT WORKS, MASKING, WHY HUMAN, CREDIBILITY, PRICING, JOIN, FAQ) |
 | "Pick your conversation" lines | `SCENES` in `public/script.js` |
-| Demo lesson, brief and match screens | `learn()`, `brief()` and `match()` in `public/demo.js` |
-| Demo sparring lines and scoring | `ROUNDS` and `BEST` in `public/demo.js` |
-| Demo feedback | `partnerNote()` and `evaluatorNote()` in `public/demo.js` |
+| Demo copy: story, framework prompts and feedback, expert comparison, live spar lines | the content block at the top of `public/demo.js`: `STORY`, `PROMPTS`, `PRO`, `LIVE` |
+| Demo screens: Train home, roadmap, match, scorecard, Spar tab | the `SCREENS` object in `public/demo.js` |
+
+The demo is built for presenting: → advances, ← goes back, 1–9 jump to a section, R restarts. Finishing the scorecard marks `demo_completed` on a later sign-up.
 
 The tagline also appears in the page title, the `og:title` tag and the footer of `index.html`, so change it everywhere.
 
